@@ -1,5 +1,4 @@
-use std::cell::RefCell;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tracing::{debug, info};
 
 use windows::Win32::{
@@ -42,10 +41,10 @@ use windows::Win32::{
     System::LibraryLoader::GetModuleHandleW,
     UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI},
     UI::WindowsAndMessaging::{
-        DefWindowProcW, GetWindowLongPtrW, GetWindowRect, LoadCursorW, PostMessageW,
+        DefWindowProcW, GetWindowLongPtrW, LoadCursorW, PostMessageW,
         RegisterClassW, SetWindowLongPtrW, SetWindowPos, ShowWindow, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW,
         CW_USEDEFAULT, GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, SWP_NOACTIVATE, SWP_NOCOPYBITS,
-        SWP_NOMOVE, SWP_NOSIZE, SW_HIDE, SW_SHOWNA, WINDOWPOS, WM_DESTROY, WM_NCCREATE, WM_PAINT,
+        SW_HIDE, SW_SHOWNA, WM_DESTROY, WM_DPICHANGED, WM_NCCREATE, WM_PAINT,
         WM_USER, WM_WINDOWPOSCHANGING, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP,
         WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
     },
@@ -425,65 +424,24 @@ impl RenderedView {
 
                     let this_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const CandidateWindow;
                     if !this_ptr.is_null() {
-                        (*this_ptr).model.replace(model.clone());
+                        *(*this_ptr).model.lock().unwrap_or_else(|e| e.into_inner()) = model.clone();
 
-                        let (hw_width, hw_height, paint_needed) = {
-                            let view_ref = (*this_ptr).view.borrow();
-                            if let Some(view) = view_ref.as_ref() {
-                                let dpi = RenderedView::get_dpi_for_window(hwnd);
-                                info!("  DPI: {}", dpi);
-                                if let Ok(metrics) = view.calculate_client_rect(&model, dpi) {
-                                    info!("  metrics.width: {}, metrics.height: {}", metrics.width, metrics.height);
-                                    info!("  metrics.hw_width: {}, metrics.hw_height: {}", metrics.hw_width, metrics.hw_height);
-                                    info!("  metrics.item_widths: {:?}", metrics.item_widths);
-                                    (metrics.hw_width, metrics.hw_height, !model.items.is_empty())
-                                } else {
-                                    (0.0, 0.0, false)
-                                }
-                            } else {
-                                (0.0, 0.0, false)
-                            }
-                        };
-
-                        if hw_width > 0.0 && hw_height > 0.0 {
-                            let _ = SetWindowPos(
-                                hwnd,
-                                Some(HWND_TOPMOST),
-                                0,
-                                0,
-                                hw_width as i32,
-                                hw_height as i32,
-                                SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOCOPYBITS,
+                        // 以 TSF 插入点所在屏为唯一基准，一次完成定位+定尺寸，DPI 同帧一致
+                        let anchor = RenderedView::current_anchor(this_ptr);
+                        if let Some((dpi, metrics)) =
+                            RenderedView::apply_layout(this_ptr, anchor, None)
+                        {
+                            info!(
+                                "  layout dpi={}, hw={}x{}",
+                                dpi, metrics.hw_width, metrics.hw_height
                             );
-
-                            let mut rc = RECT::default();
-                            if GetWindowRect(hwnd, &mut rc).is_ok() {
-                                let (cx, cy) = RenderedView::clamp_point_to_monitor(
-                                    rc.left,
-                                    rc.top,
-                                    hw_width as i32,
-                                    hw_height as i32,
-                                );
-                                if cx != rc.left || cy != rc.top {
-                                    let _ = SetWindowPos(
-                                        hwnd,
-                                        Some(HWND_TOPMOST),
-                                        cx,
-                                        cy,
-                                        0,
-                                        0,
-                                        SWP_NOSIZE | SWP_NOACTIVATE,
-                                    );
-                                }
-                            }
-
-                            if paint_needed {
-                                let view_ref = (*this_ptr).view.borrow();
-                                if let Some(view) = view_ref.as_ref() {
-                                    let dpi = RenderedView::get_dpi_for_window(hwnd);
-                                    if let Ok(metrics) = view.calculate_client_rect(&model, dpi) {
-                                        let _ = view.on_paint_with_metrics(&model, dpi, &metrics);
-                                    }
+                            if !model.items.is_empty() {
+                                let view_guard = (*this_ptr)
+                                    .view
+                                    .lock()
+                                    .unwrap_or_else(|e| e.into_inner());
+                                if let Some(view) = view_guard.as_ref() {
+                                    let _ = view.on_paint_with_metrics(&model, dpi, &metrics);
                                 }
                             }
                         }
@@ -496,31 +454,19 @@ impl RenderedView {
                 let x = wparam.0 as i32;
                 let y = lparam.0 as i32;
                 let this_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const CandidateWindow;
-                let (cx, cy) = if !this_ptr.is_null() {
-                    let model = (*this_ptr).model.borrow();
-                    let view_ref = (*this_ptr).view.borrow();
-                    if let Some(view) = view_ref.as_ref() {
-                        let dpi = RenderedView::get_dpi_for_window(hwnd);
-                        if let Ok(metrics) = view.calculate_client_rect(&model, dpi) {
-                            RenderedView::position_relative_to_cursor(x, y, metrics.hw_width as i32, metrics.hw_height as i32)
-                        } else {
-                            (x, y + 24)
-                        }
-                    } else {
-                        (x, y + 24)
+                if !this_ptr.is_null() {
+                    let anchor = POINT { x, y };
+                    *(*this_ptr)
+                        .last_anchor
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner()) = anchor;
+                    // 跨屏移动时按目标屏 DPI 同步重定尺寸并重绘，避免尺寸停留在旧屏
+                    if let Some((dpi, metrics)) =
+                        RenderedView::apply_layout(this_ptr, anchor, None)
+                    {
+                        RenderedView::repaint_current(this_ptr, dpi, &metrics);
                     }
-                } else {
-                    (x, y + 24)
-                };
-                let _ = SetWindowPos(
-                    hwnd,
-                    Some(HWND_TOPMOST),
-                    cx,
-                    cy,
-                    0,
-                    0,
-                    SWP_NOSIZE | SWP_NOACTIVATE,
-                );
+                }
                 LRESULT(0)
             }
             WM_SHOW_ROOT => {
@@ -532,21 +478,18 @@ impl RenderedView {
 
                     let this_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const CandidateWindow;
                     if !this_ptr.is_null() {
-                        unsafe { (*this_ptr).root_model.replace(Some(*root.clone())) };
+                        *(*this_ptr).root_model.lock().unwrap_or_else(|e| e.into_inner()) =
+                            Some(*root.clone());
 
-                        let view = unsafe { (*this_ptr).view.borrow() };
-                        if let Some(view) = view.as_ref() {
-                            let dpi = RenderedView::get_dpi_for_window(hwnd);
-                            if let Ok(metrics) = view.calculate_root_rect(&root, dpi) {
-                                let _ = SetWindowPos(
-                                    hwnd,
-                                    Some(HWND_TOPMOST),
-                                    0,
-                                    0,
-                                    metrics.hw_width as i32,
-                                    metrics.hw_height as i32,
-                                    SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOCOPYBITS,
-                                );
+                        let anchor = RenderedView::current_anchor(this_ptr);
+                        if let Some((dpi, metrics)) =
+                            RenderedView::apply_layout(this_ptr, anchor, None)
+                        {
+                            let view_guard = (*this_ptr)
+                                .view
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner());
+                            if let Some(view) = view_guard.as_ref() {
                                 let _ = view.on_paint_root(&root, dpi, &metrics);
                             }
                         }
@@ -559,46 +502,14 @@ impl RenderedView {
                 debug!("WM_HIDE_ROOT received");
                 let this_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const CandidateWindow;
                 if !this_ptr.is_null() {
-                    (*this_ptr).root_model.replace(None);
+                    *(*this_ptr).root_model.lock().unwrap_or_else(|e| e.into_inner()) = None;
 
-                    let model = (*this_ptr).model.borrow();
-                    let view = (*this_ptr).view.borrow();
-                    if let Some(view) = view.as_ref() {
-                        let dpi = RenderedView::get_dpi_for_window(hwnd);
-                        if let Ok(metrics) = view.calculate_client_rect(&model, dpi) {
-                                let _ = SetWindowPos(
-                                    hwnd,
-                                    Some(HWND_TOPMOST),
-                                    0,
-                                    0,
-                                    metrics.hw_width as i32,
-                                    metrics.hw_height as i32,
-                                    SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOCOPYBITS,
-                                );
-                                let mut rc = RECT::default();
-                                if GetWindowRect(hwnd, &mut rc).is_ok() {
-                                    let (cx, cy) = RenderedView::clamp_point_to_monitor(
-                                        rc.left,
-                                        rc.top,
-                                        metrics.hw_width as i32,
-                                        metrics.hw_height as i32,
-                                    );
-                                    if cx != rc.left || cy != rc.top {
-                                        let _ = SetWindowPos(
-                                            hwnd,
-                                            Some(HWND_TOPMOST),
-                                            cx,
-                                            cy,
-                                            0,
-                                            0,
-                                            SWP_NOSIZE | SWP_NOACTIVATE,
-                                        );
-                                    }
-                                }
-                            if !model.items.is_empty() {
-                                let _ = view.on_paint_with_metrics(&model, dpi, &metrics);
-                            }
-                        }
+                    // 切回候选内容：统一按插入点所在屏 DPI 重定几何，若非空则重绘
+                    let anchor = RenderedView::current_anchor(this_ptr);
+                    if let Some((dpi, metrics)) =
+                        RenderedView::apply_layout(this_ptr, anchor, None)
+                    {
+                        RenderedView::repaint_current(this_ptr, dpi, &metrics);
                     }
                 }
                 LRESULT(0)
@@ -610,10 +521,10 @@ impl RenderedView {
 
                 let this_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const CandidateWindow;
                 if !this_ptr.is_null() {
-                    let model = (*this_ptr).model.borrow();
+                    let model = (*this_ptr).model.lock().unwrap_or_else(|e| e.into_inner());
                     info!("  painting {} items", model.items.len());
                     if !model.items.is_empty() {
-                        let view = (*this_ptr).view.borrow();
+                        let view = (*this_ptr).view.lock().unwrap_or_else(|e| e.into_inner());
                         if let Some(view) = view.as_ref() {
                             let _ = view.on_paint(&model);
                         }
@@ -624,23 +535,34 @@ impl RenderedView {
                 LRESULT(0)
             }
             WM_WINDOWPOSCHANGING => {
-                let pos = lparam.0 as *mut WINDOWPOS;
-                if let Some(pos) = pos.as_mut() {
-                    let dpi = RenderedView::get_dpi_for_point(POINT { x: pos.x, y: pos.y });
-
-                    let this_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const CandidateWindow;
-                    if !this_ptr.is_null() {
-                        let model = (*this_ptr).model.borrow();
-                        let view = (*this_ptr).view.borrow();
-                        if let Some(view) = view.as_ref() {
-                            if let Ok(metrics) = view.calculate_client_rect(&model, dpi) {
-                                pos.cx = metrics.hw_width as i32;
-                                pos.cy = metrics.hw_height as i32;
-                                (pos.x, pos.y) = RenderedView::clamp_point_to_monitor(
-                                    pos.x, pos.y, pos.cx, pos.cy,
-                                );
-                            }
-                        }
+                // 窗口几何统一由 apply_layout 在各命令中一次性给出（位置+尺寸同 DPI）。
+                // 这里不再依据“窗口当前位置”的 DPI 改写 cx/cy/x/y：旧实现不判 flags，
+                // 在跨屏 SetWindowPos 的中间态会用旧屏 DPI 把尺寸锁小，导致副屏只显示左上部分。
+                LRESULT(0)
+            }
+            WM_DPICHANGED => {
+                // 进程为 PER_MONITOR_AWARE_V2：跨 DPI 屏时自行接管，绝不交给
+                // DefWindowProc 做默认二次缩放，以免与 apply_layout 互相覆盖。
+                let new_dpi = (wparam.0 & 0xFFFF) as f32;
+                let suggested = &*(lparam.0 as *const RECT);
+                info!(
+                    "WM_DPICHANGED dpi={} suggested=({},{},{},{})",
+                    new_dpi, suggested.left, suggested.top, suggested.right, suggested.bottom
+                );
+                let this_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const CandidateWindow;
+                if !this_ptr.is_null() {
+                    let anchor = POINT {
+                        x: suggested.left,
+                        y: suggested.top,
+                    };
+                    *(*this_ptr)
+                        .last_anchor
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner()) = anchor;
+                    if let Some((dpi, metrics)) =
+                        RenderedView::apply_layout(this_ptr, anchor, Some(new_dpi))
+                    {
+                        RenderedView::repaint_current(this_ptr, dpi, &metrics);
                     }
                 }
                 LRESULT(0)
@@ -670,22 +592,91 @@ impl RenderedView {
         }
     }
 
-    fn clamp_point_to_monitor(x: i32, y: i32, w: i32, h: i32) -> (i32, i32) {
-        unsafe {
-            let monitor = MonitorFromPoint(POINT { x, y }, MONITOR_DEFAULTTONEAREST);
-            let mut mi = MONITORINFO {
-                cbSize: std::mem::size_of::<MONITORINFO>() as u32,
-                ..Default::default()
-            };
+    // ---- 多显示器 / 逐屏 DPI 的统一布局入口 ----
+    // 以 TSF 插入点所在显示器为唯一基准：同一处取 DPI、算尺寸、定位置，
+    // 并用一次 SetWindowPos 同时给出位置与尺寸，保证 HWND 几何与交换链
+    // 像素尺寸同帧、同一 DPI，从根上消除跨屏时尺寸被旧屏 DPI 锁死的问题。
 
-            if GetMonitorInfoW(monitor, &mut mi).as_bool() {
-                let rc = mi.rcWork;
-                (
-                    x.clamp(rc.left, rc.right - w),
-                    y.clamp(rc.top, rc.bottom - h),
-                )
-            } else {
-                (x, y)
+    unsafe fn current_anchor(this: *const CandidateWindow) -> POINT {
+        if let Some(w) = this.as_ref() {
+            if let Ok(anchor) = w.last_anchor.lock() {
+                return *anchor;
+            }
+        }
+        POINT::default()
+    }
+
+    unsafe fn apply_layout(
+        this: *const CandidateWindow,
+        anchor: POINT,
+        dpi_hint: Option<f32>,
+    ) -> Option<(f32, RenderedMetrics)> {
+        let w = this.as_ref()?;
+        let dpi = dpi_hint.unwrap_or_else(|| Self::get_dpi_for_point(anchor));
+        // 先克隆状态，避免持锁期间 SetWindowPos 重入 wnd_proc
+        let root = w.root_model.lock().ok().and_then(|g| g.clone());
+
+        let (hwnd, metrics, x, y) = {
+            let model = w.model.lock().ok()?;
+            let view_guard = w.view.lock().ok()?;
+            let view = view_guard.as_ref()?;
+            let metrics = match root.as_ref() {
+                Some(r) => view.calculate_root_rect(r, dpi).ok()?,
+                None => view.calculate_client_rect(&model, dpi).ok()?,
+            };
+            let (x, y) = Self::position_relative_to_cursor(
+                anchor.x,
+                anchor.y,
+                metrics.hw_width as i32,
+                metrics.hw_height as i32,
+            );
+            (view.hwnd, metrics, x, y)
+        };
+
+        let _ = SetWindowPos(
+            hwnd,
+            Some(HWND_TOPMOST),
+            x,
+            y,
+            metrics.hw_width as i32,
+            metrics.hw_height as i32,
+            SWP_NOACTIVATE | SWP_NOCOPYBITS,
+        );
+        info!(
+            "apply_layout: dpi={}, hw={}x{}, at=({},{})",
+            dpi, metrics.hw_width, metrics.hw_height, x, y
+        );
+        Some((dpi, metrics))
+    }
+
+    unsafe fn repaint_current(
+        this: *const CandidateWindow,
+        dpi: f32,
+        metrics: &RenderedMetrics,
+    ) {
+        let w = match this.as_ref() {
+            Some(w) => w,
+            None => return,
+        };
+        let root = w.root_model.lock().ok().and_then(|g| g.clone());
+        let view_guard = match w.view.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let view = match view_guard.as_ref() {
+            Some(v) => v,
+            None => return,
+        };
+        match root.as_ref() {
+            Some(r) => {
+                let _ = view.on_paint_root(r, dpi, metrics);
+            }
+            None => {
+                if let Ok(model) = w.model.lock() {
+                    if !model.items.is_empty() {
+                        let _ = view.on_paint_with_metrics(&model, dpi, metrics);
+                    }
+                }
             }
         }
     }
@@ -1542,9 +1533,11 @@ impl RenderedView {
 }
 
 pub struct CandidateWindow {
-    model: RefCell<CandidateModel>,
-    root_model: RefCell<Option<RootModel>>,
-    view: RefCell<Option<RenderedView>>,
+    model: Mutex<CandidateModel>,
+    root_model: Mutex<Option<RootModel>>,
+    view: Mutex<Option<RenderedView>>,
+    // 最近一次 TSF 插入点屏幕坐标（物理像素），作为跨屏布局/重算的统一锚点
+    last_anchor: Mutex<POINT>,
 }
 
 unsafe impl Send for CandidateWindow {}
@@ -1553,9 +1546,10 @@ unsafe impl Sync for CandidateWindow {}
 impl CandidateWindow {
     pub fn new() -> Arc<Self> {
         let window = Arc::new(Self {
-            model: RefCell::new(CandidateModel::default()),
-            root_model: RefCell::new(None),
-            view: RefCell::new(None),
+            model: Mutex::new(CandidateModel::default()),
+            root_model: Mutex::new(None),
+            view: Mutex::new(None),
+            last_anchor: Mutex::new(POINT::default()),
         });
 
         // Initialize UI immediately in the thread that will run message loop
@@ -1565,12 +1559,12 @@ impl CandidateWindow {
     }
 
     fn ensure_view_initialized(&self) {
-        if self.view.borrow().is_none() {
+        if self.view.lock().unwrap_or_else(|e| e.into_inner()).is_none() {
             let user_data_ptr = self as *const Self;
             match RenderedView::new(user_data_ptr.cast()) {
                 Ok(view) => {
                     info!("UI initialized successfully");
-                    *self.view.borrow_mut() = Some(view);
+                    *self.view.lock().unwrap_or_else(|e| e.into_inner()) = Some(view);
                 }
                 Err(e) => {
                     info!("Failed to initialize UI: {}", e);
@@ -1582,37 +1576,27 @@ impl CandidateWindow {
     pub fn show(&self, x: i32, y: i32) {
         self.ensure_view_initialized();
 
-        let (hwnd, cx, cy) = {
-            let view_ref = self.view.borrow();
-            let view = match view_ref.as_ref() {
-                Some(v) => v,
+        let anchor = POINT { x, y };
+        *self
+            .last_anchor
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = anchor;
+
+        let hwnd = {
+            let view_guard = self.view.lock().unwrap_or_else(|e| e.into_inner());
+            match view_guard.as_ref() {
+                Some(v) => v.hwnd,
                 None => {
                     info!("  show: view is None!");
                     return;
                 }
-            };
-            let hwnd = view.hwnd;
-            let model = self.model.borrow();
-            let dpi = RenderedView::get_dpi_for_point(POINT { x, y });
-            let (cx, cy) = if let Ok(metrics) = view.calculate_client_rect(&model, dpi) {
-                RenderedView::position_relative_to_cursor(x, y, metrics.hw_width as i32, metrics.hw_height as i32)
-            } else {
-                (x, y + 24)
-            };
-            (hwnd, cx, cy)
+            }
         };
 
-        info!("  show: hwnd={:?}, moving to ({}, {})", hwnd.0, cx, cy);
         unsafe {
-            let _ = SetWindowPos(
-                hwnd,
-                Some(HWND_TOPMOST),
-                cx,
-                cy,
-                0,
-                0,
-                SWP_NOSIZE | SWP_NOACTIVATE,
-            );
+            // 跨屏弹出时当场按目标屏 DPI 一次定好位置与尺寸（不再 SWP_NOSIZE），
+            // 从源头避免窗口带着旧屏尺寸跨 DPI 而被系统二次缩放。
+            RenderedView::apply_layout(self as *const Self, anchor, None);
             info!("  show: posting WM_SHOW_CANDIDATE");
             let result = PostMessageW(Some(hwnd), WM_SHOW_CANDIDATE, WPARAM(0), LPARAM(0));
             info!("  show: PostMessageW result: {:?}", result);
@@ -1620,7 +1604,7 @@ impl CandidateWindow {
     }
 
     pub fn hide(&self) {
-        if let Some(view) = self.view.borrow().as_ref() {
+        if let Some(view) = self.view.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
             unsafe {
                 let _ = PostMessageW(Some(view.hwnd), WM_HIDE_CANDIDATE, WPARAM(0), LPARAM(0));
             }
@@ -1628,7 +1612,7 @@ impl CandidateWindow {
     }
 
     pub fn update(&self, ctx: &Context) {
-        if let Some(view) = self.view.borrow().as_ref() {
+        if let Some(view) = self.view.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
             info!(
                 "  update: hwnd={:?}, posting WM_UPDATE_CANDIDATE",
                 view.hwnd.0
@@ -1654,9 +1638,9 @@ impl CandidateWindow {
 
     pub fn show_root(&self, letter: char, root: &str) -> Result<(), String> {
         self.ensure_view_initialized();
-        if let Some(view) = self.view.borrow().as_ref() {
+        if let Some(view) = self.view.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
             let root_model = RootModel::from((letter, root.to_string()));
-            *self.root_model.borrow_mut() = Some(root_model.clone());
+            *self.root_model.lock().unwrap_or_else(|e| e.into_inner()) = Some(root_model.clone());
 
             unsafe {
                 let root_ptr = Box::into_raw(Box::new(root_model));
@@ -1674,8 +1658,8 @@ impl CandidateWindow {
     }
 
     pub fn hide_root(&self) {
-        if let Some(view) = self.view.borrow().as_ref() {
-            *self.root_model.borrow_mut() = None;
+        if let Some(view) = self.view.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            *self.root_model.lock().unwrap_or_else(|e| e.into_inner()) = None;
             unsafe {
                 let _ = PostMessageW(Some(view.hwnd), WM_HIDE_ROOT, WPARAM(0), LPARAM(0));
             }
