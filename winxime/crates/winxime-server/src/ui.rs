@@ -178,22 +178,39 @@ impl From<&Context> for CandidateModel {
             1
         };
 
-        let comments: Vec<String> = ctx
+        let max_cand = config.style.candidate_count as usize;
+        let all_items: Vec<String> = ctx
+            .candidates
+            .candies
+            .iter()
+            .map(|c| c.str.clone())
+            .collect();
+        let all_comments: Vec<String> = ctx
             .candidates
             .comments
             .iter()
             .map(|c| c.str.clone())
             .collect();
+        let n = all_items.len().min(max_cand);
+        let items = all_items[..n].to_vec();
+        let comments = all_comments[..n].to_vec();
 
         Self {
-            items: ctx
-                .candidates
-                .candies
-                .iter()
-                .map(|c| c.str.clone())
-                .collect(),
+            items,
             comments,
-            selkeys: vec!['1' as u16, '2' as u16, '3' as u16, '4' as u16, '5' as u16],
+            selkeys: {
+                let mut keys = Vec::with_capacity(n);
+                for i in 0..n {
+                    if i < 9 {
+                        keys.push('1' as u16 + i as u16);
+                    } else if i == 9 {
+                        keys.push('0' as u16);
+                    } else {
+                        keys.push('?' as u16);
+                    }
+                }
+                keys
+            },
             total_pages: ctx.candidates.total_pages,
             current_page: ctx.candidates.current_page + 1,
             current_sel: ctx.candidates.highlighted as usize,

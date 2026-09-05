@@ -1,7 +1,5 @@
 use librime::{
-    get_key_modifiers, vk_to_xk, K_ALT_MASK, K_CONTROL_MASK, K_SHIFT_MASK, VK_BACK, VK_DOWN,
-    VK_END, VK_ESCAPE, VK_HOME, VK_LEFT, VK_NEXT, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_SPACE, VK_TAB,
-    VK_UP,
+    get_key_modifiers, vk_to_xk, K_ALT_MASK, K_CONTROL_MASK, K_SHIFT_MASK, VK_ESCAPE, VK_SPACE,
 };
 use std::sync::Arc;
 use tracing::debug;
@@ -784,7 +782,7 @@ impl XimeTextService_Impl {
         if (VK_X_A..=VK_X_Z).contains(&code) {
             return true;
         }
-        if code == VK_RETURN || code == VK_BACK || code == VK_ESCAPE || code == VK_TAB {
+        if code == VK_ESCAPE {
             return true;
         }
         if code == VK_SPACE {
@@ -806,12 +804,6 @@ impl XimeTextService_Impl {
             return true;
         }
         if code == VK_OEM_2 || code == VK_OEM_5 {
-            return true;
-        }
-        if code == VK_PRIOR || code == VK_NEXT || code == VK_HOME || code == VK_END {
-            return true;
-        }
-        if code == VK_LEFT || code == VK_RIGHT || code == VK_UP || code == VK_DOWN {
             return true;
         }
         false
