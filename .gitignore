@@ -1,0 +1,18 @@
+# 构建产物与缓存
+winxime/target/
+libximecore/target/
+libximecore/librime/build/
+libximecore/librime/dist/
+libximecore/librime/deps/
+libximecore/librime/bin/
+libximecore/librime/lib/
+libximecore/librime/data/
+
+# 工具链与下载缓存
+cmake-3.30.6-windows-x86_64/
+cmake-3.30.6.zip
+*.tar.gz
+*.zip
+
+# 日志与诊断文件
+*.log

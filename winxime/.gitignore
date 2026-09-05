@@ -1,0 +1,10 @@
+/target
+librime-rs-master
+Cargo.lock
+/*.log
+/dist
+/installer
+/*.zip
+rime-data
+# local cargo config
+.cargo/config.toml

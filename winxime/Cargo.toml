@@ -1,0 +1,48 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/winxime-tsf",
+    "crates/winxime-ipc",
+    "crates/winxime-server",
+    "crates/winxime-setup",
+    "crates/winxime-tsf-register",
+    "crates/ipc-test",
+]
+
+[workspace.package]
+version = "0.3.1"
+edition = "2021"
+authors = ["Kor1 <kingzcheung@gmail.com>"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/ximeiorg/winxime"
+
+[workspace.dependencies]
+# libximecore — git dep, patched to local via .cargo/config.toml
+librime = { git = "https://github.com/ximeiorg/libximecore.git", package = "librime" }
+librime-sys2 = { git = "https://github.com/ximeiorg/libximecore.git", package = "librime-sys2" }
+xime-config = { git = "https://github.com/ximeiorg/libximecore.git", package = "xime-config" }
+xime-rime = { git = "https://github.com/ximeiorg/libximecore.git", package = "xime-rime" }
+xime-ipc = { git = "https://github.com/ximeiorg/libximecore.git", package = "xime-ipc" }
+xime-setup-lib = { git = "https://github.com/ximeiorg/libximecore.git", package = "xime-setup-lib" }
+
+# winxime workspace crates
+winxime-tsf = { path = "crates/winxime-tsf" }
+winxime-ipc = { path = "crates/winxime-ipc" }
+winxime-tsf-register = { path = "crates/winxime-tsf-register" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Ole",
+    "Win32_UI_TextServices",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+] }
+windows-core = "0.62.2"
+

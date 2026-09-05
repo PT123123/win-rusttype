@@ -1,0 +1,4 @@
+[submodule "rime-wubi"]
+	path = rime-wubi
+	url = https://github.com/kingzcheung/rime-wubi.git
+	branch = main

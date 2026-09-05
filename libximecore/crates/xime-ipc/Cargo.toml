@@ -1,0 +1,13 @@
+[package]
+name = "xime-ipc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Xime IPC message types and DaemonClient trait"
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-trait = "0.1"

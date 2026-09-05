@@ -1,0 +1,12 @@
+[package]
+name = "xime-rime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "High-level Rime engine wrapper"
+repository.workspace = true
+
+[dependencies]
+librime = { path = "../librime" }
+librime-sys2 = { path = "../librime-sys2" }
+tracing.workspace = true

@@ -1,0 +1,41 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    runs-on: ubuntu-latest
+    name: Release
+    needs: [build]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download MSI
+        uses: actions/download-artifact@v4
+        with:
+          name: Unsigned Installer (MSI)
+          path: dist
+      - name: Download MSIX
+        uses: actions/download-artifact@v4
+        with:
+          name: MSIX Package
+          path: dist
+      - name: Calculate Checksums
+        run: |
+          cd dist
+          for f in *.msi *.msix; do
+            [ -f "$f" ] && sha256sum "$f" > "$f.sha256"
+          done
+      - name: GH Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: 曦码·曜 ${{ github.ref_name }}
+          draft: true
+          files: dist/*

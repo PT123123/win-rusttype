@@ -1,0 +1,7 @@
+[package]
+name = "ipc-test"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+winxime-ipc = { path = "../winxime-ipc" }

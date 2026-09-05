@@ -1,0 +1,214 @@
+<?xml version='1.0' encoding='utf-8'?>
+
+<?if $(sys.BUILDARCH) = x64 or $(sys.BUILDARCH) = arm64 ?>
+    <?define PlatformProgramFilesFolder = "ProgramFiles64Folder" ?>
+<?else ?>
+    <?define PlatformProgramFilesFolder = "ProgramFilesFolder" ?>
+<?endif ?>
+
+<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
+
+    <Product
+        Id='*'
+        Name='曦码·曜'
+        UpgradeCode='4C3D8396-6499-481D-ACD7-5E4A74E4E8A0'
+        Manufacturer='Xime Org'
+        Language='1033'
+        Codepage='1252'
+        Version='$(var.Version)'>
+        
+        <Package Id='*'
+            Keywords='Installer'
+            Manufacturer='Xime Org'
+            InstallerVersion='450'
+            Languages='1033'
+            Compressed='yes'
+            InstallScope='perMachine'
+            SummaryCodepage='1252'
+            />
+        
+        <MajorUpgrade
+            Schedule='afterInstallInitialize'
+            DowngradeErrorMessage='A newer version of [ProductName] is already installed. Setup will now exit.'/>
+        
+        <Media Id='1' Cabinet='media1.cab' EmbedCab='yes' DiskPrompt='CD-ROM #1'/>
+        <Property Id='DiskPrompt' Value='曦码·曜 Installation'/>
+        
+        <Property Id='REINSTALLMODE' Value='amus'/>
+        
+        <Directory Id='TARGETDIR' Name='SourceDir'>
+            <!-- Start Menu -->
+            <Directory Id='ProgramMenuFolder'>
+                <Directory Id='ApplicationProgramsFolder' Name='曦码·曜'>
+                    <Component Id='ApplicationShortcut' Guid='{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}'>
+                        <Shortcut Id='XimeSettingsShortcut'
+                            Name='曦码·曜设置'
+                            Target='[APPLICATIONFOLDER]winxime-setup.exe'
+                            WorkingDirectory='APPLICATIONFOLDER'
+                            Icon='ProductICO'/>
+                        <RemoveFolder Id='RemoveApplicationProgramsFolder' On='uninstall'/>
+                        <RegistryValue Root='HKCU' Key='Software\Xime' Name='installed' Type='integer' Value='1' KeyPath='yes'/>
+                    </Component>
+                </Directory>
+            </Directory>
+            
+            <!-- Application Folder -->
+            <Directory Id='$(var.PlatformProgramFilesFolder)' Name='PFiles'>
+                <Directory Id='APPLICATIONFOLDER' Name='Xime'>
+                    <!-- Main binaries -->
+                    <Component Id='binary0' Guid='*'>
+                        <File
+                            Id='exe0'
+                            Name='winxime-server.exe'
+                            DiskId='1'
+                            Source='$(var.CargoTargetBinDir)\winxime-server.exe'
+                            KeyPath='yes'/>
+                    </Component>
+                    <Component Id='binary1' Guid='*'>
+                        <File
+                            Id='exe1'
+                            Name='winxime-setup.exe'
+                            DiskId='1'
+                            Source='$(var.CargoTargetBinDir)\winxime-setup.exe'
+                            KeyPath='yes'/>
+                    </Component>
+                    <Component Id='binary2' Guid='*'>
+                        <File
+                            Id='exe2'
+                            Name='winxime-tsf-register.exe'
+                            DiskId='1'
+                            Source='$(var.CargoTargetBinDir)\winxime-tsf-register.exe'
+                            KeyPath='yes'/>
+                    </Component>
+                    <Component Id='tsf_dll' Guid='*'>
+                        <File
+                            Id='tsf0'
+                            Name='winxime_tsf.dll'
+                            DiskId='1'
+                            Source='$(var.CargoTargetBinDir)\winxime_tsf.dll'
+                            KeyPath='yes'/>
+                    </Component>
+                    <Component Id='rime_dll' Guid='*'>
+                        <File
+                            Id='rime0'
+                            Name='rime.dll'
+                            DiskId='1'
+                            Source='$(var.CargoTargetBinDir)\rime.dll'
+                            KeyPath='yes'/>
+                    </Component>
+                    <Component Id='icon_file' Guid='*'>
+                        <File
+                            Id='icon0'
+                            Name='icon.ico'
+                            DiskId='1'
+                            Source='resources\icon.ico'
+                            KeyPath='yes'/>
+                    </Component>
+                    
+                    <!-- Run startup -->
+                    <Component Id='RunStartup' Guid='{EC8A2320-6C0B-CC95-81E0-7F182F4A7BF8}'>
+                        <RegistryValue Root='HKLM' Key='SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
+                            Name='XimeServer' Type='string' Value='[APPLICATIONFOLDER]winxime-server.exe' KeyPath='yes'/>
+                    </Component>
+                    
+                    <!-- Data folder: rime base data (harvested by heat) -->
+                    <Directory Id='DataFolder' Name='data'/>
+                    
+                    <!-- User-data folder: schema files for first-run deploy (harvested by heat) -->
+                    <Directory Id='UserDataFolder' Name='user-data'/>
+                    
+                    <!-- Resources folder (harvested by heat) -->
+                    <Directory Id='ResourcesFolder' Name='resources'/>
+                </Directory>
+            </Directory>
+        </Directory>
+        
+        <!-- Custom Actions for TSF registration -->
+        <Binary Id='tsfreg' SourceFile='$(var.CargoTargetBinDir)\winxime-tsf-register.exe'/>
+        
+        <CustomAction Id='RegisterTSF' 
+            BinaryKey='tsfreg'
+            ExeCommand='-copy-and-register "[APPLICATIONFOLDER]winxime_tsf.dll" "[APPLICATIONFOLDER]icon.ico"'
+            Execute='deferred'
+            Impersonate='no'
+            Return='ignore'/>
+        
+        <CustomAction Id='UnregisterTSF' 
+            BinaryKey='tsfreg'
+            ExeCommand='-unregister-and-remove'
+            Execute='deferred'
+            Impersonate='no'
+            Return='ignore'/>
+        
+        <!-- Stop server before uninstall -->
+        <CustomAction Id='StopServer' 
+            BinaryKey='tsfreg'
+            ExeCommand='-stop-server'
+            Execute='deferred'
+            Impersonate='no'
+            Return='ignore'/>
+        
+        <!-- Start server after install -->
+        <SetProperty Id='StartServer' Value='[APPLICATIONFOLDER]winxime-server.exe' Before='StartServer' Sequence='execute'/>
+        <CustomAction Id='StartServer' 
+            Property='StartServer'
+            ExeCommand=''
+            Execute='deferred'
+            Impersonate='yes'
+            Return='asyncNoWait'/>
+        
+        <InstallExecuteSequence>
+            <Custom Action='RegisterTSF' After='InstallFiles'>NOT Installed</Custom>
+            <Custom Action='StartServer' Before='InstallFinalize'>NOT Installed</Custom>
+            <Custom Action='StopServer' Before='UnregisterTSF'>Installed</Custom>
+            <Custom Action='UnregisterTSF' Before='RemoveFiles'>Installed</Custom>
+        </InstallExecuteSequence>
+        
+        <Feature
+            Id='Binaries'
+            Title='Application'
+            Description='Installs all binaries and data.'
+            Level='1'
+            ConfigurableDirectory='APPLICATIONFOLDER'
+            AllowAdvertise='no'
+            Display='expand'
+            Absent='disallow'>
+            
+            <ComponentRef Id='binary0'/>
+            <ComponentRef Id='binary1'/>
+            <ComponentRef Id='binary2'/>
+            <ComponentRef Id='tsf_dll'/>
+            <ComponentRef Id='rime_dll'/>
+            <ComponentRef Id='icon_file'/>
+            <ComponentRef Id='RunStartup'/>
+            <ComponentRef Id='ApplicationShortcut'/>
+        </Feature>
+        
+        <!-- Include harvested data and resources -->
+        <Feature Id='DataFiles' Level='1'>
+            <ComponentGroupRef Id='DataFiles'/>
+        </Feature>
+        <Feature Id='UserDataFiles' Level='1'>
+            <ComponentGroupRef Id='UserDataFiles'/>
+        </Feature>
+        <Feature Id='ResourcesFiles' Level='1'>
+            <ComponentGroupRef Id='ResourcesFiles'/>
+        </Feature>
+        
+        <SetProperty Id='ARPINSTALLLOCATION' Value='[APPLICATIONFOLDER]' After='CostFinalize'/>
+        
+        <Icon Id='ProductICO' SourceFile='resources\icon.ico'/>
+        <Property Id='ARPPRODUCTICON' Value='ProductICO' />
+        
+        <!-- Required property for WixUI_InstallDir -->
+        <Property Id='WIXUI_INSTALLDIR' Value='APPLICATIONFOLDER'/>
+        
+        <UI>
+            <UIRef Id='WixUI_InstallDir'/>
+        </UI>
+        
+        <WixVariable Id='WixUILicenseRtf' Value='crates\winxime-server\wix\License.rtf'/>
+        
+    </Product>
+
+</Wix>
