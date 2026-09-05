@@ -1,8 +1,8 @@
-<#
+﻿<#
 安装脚本：凑合输入法 (winxime) — MVP 版
 用法：
   powershell -ExecutionPolicy Bypass -File install.ps1          # 完整安装（会弹 UAC）
-  powershell -ExecutionPolicy Bypass -File install.ps1 -InstallDir "C:\Users\user\Desktop\win-rusttype\winxime\target\debug" -SkipCopy
+  powershell -ExecutionPolicy Bypass -File install.ps1 -InstallDir "<仓库根>\winxime\target\debug" -SkipCopy
   powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall
 
 流程：

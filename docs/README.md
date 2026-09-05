@@ -9,7 +9,7 @@
 
 ## 关键事实速查
 
-- **工作根**：`C:\Users\user\Desktop\win-rusttype\`
+- **工作根**：本仓库根目录（含 `winxime\`、`libximecore\`、`docs\`）
 - **构建产物**：`winxime\target\debug\`（winxime_tsf.dll / winxime-server.exe / winxime-setup.exe / rime.dll）
 - **方案数据**：`winxime\rime-wubi\`（默认 pinyin_simp，已改 schema_list 两处：default.yaml + default.custom.yaml）
 - **用户数据**：`winxime\target\debug\user-data\`（server 启动时自动拷贝 + deploy）

@@ -1,6 +1,6 @@
 @echo off
 call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
-set RIME_ROOT=C:\Users\user\Desktop\win-rusttype\libximecore\librime
+set RIME_ROOT=%~dp0libximecore\librime
 set BOOST_ROOT=%RIME_ROOT%\deps\boost-1.89.0
 cd /d %RIME_ROOT%
 echo === Compiling spelling.cc with full include paths ===
