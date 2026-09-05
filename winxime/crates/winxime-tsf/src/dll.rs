@@ -139,7 +139,7 @@ fn do_register() -> Result<()> {
 
     let cs = clsid_str();
     let module_path = get_module_path();
-    let name = "曦码·曜输入法";
+    let name = "凑合输入法";
 
     eprintln!("[Xime] DllRegisterServer: CLSID={}", cs);
     eprintln!("[Xime] DllRegisterServer: module_path={}", module_path);

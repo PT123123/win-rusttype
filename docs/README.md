@@ -1,6 +1,6 @@
-# Docs 索引
+﻿# Docs 索引
 
-本项目（曦码·曜输入法，winxime fork + librime 引擎）的技术文档。
+本项目（凑合输入法，winxime fork + librime 引擎）的技术文档。
 
 | 文件 | 内容 |
 |------|------|

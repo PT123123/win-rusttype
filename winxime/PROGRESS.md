@@ -1,4 +1,4 @@
-# 曦码·曜 (Xime Yao) 五笔输入法 - 进度跟踪
+﻿# 凑合 (Couhe) 五笔输入法 - 进度跟踪
 
 ## 当前状态
 - ✅ cargo build 零错误
@@ -59,10 +59,10 @@
 - [x] 候选栏第一个字母位置正确
 
 ### 2026-08-15 品牌名更新
-- [x] 品牌名改为「曦码·曜 (Xime Yao)」
+- [x] 品牌名改为「凑合 (Couhe)」
   - [x] 文档标题（README/AGENTS/PROGRESS/DECISIONS）
-  - [x] 调用 libximecore 的 metadata（`RimeEngine::new("Xime Yao")`、`resources/xime.yaml`）
-  - [x] TSF 注册名 / 语言栏 / DLL 注册名（中文「曦码·曜」）
+  - [x] 调用 libximecore 的 metadata（`RimeEngine::new("Couhe")`、`resources/xime.yaml`）
+  - [x] TSF 注册名 / 语言栏 / DLL 注册名（中文「凑合」）
   - [x] 设置窗口标题、MSI/MSIX 安装包显示名、Release 标题
 
 ### 2026-08-15 按键处理对齐 weasel (librime)

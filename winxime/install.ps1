@@ -1,5 +1,5 @@
 <#
-安装脚本：曦码·曜输入法 (winxime) — MVP 版
+安装脚本：凑合输入法 (winxime) — MVP 版
 用法：
   powershell -ExecutionPolicy Bypass -File install.ps1          # 完整安装（会弹 UAC）
   powershell -ExecutionPolicy Bypass -File install.ps1 -InstallDir "C:\Users\user\Desktop\win-rusttype\winxime\target\debug" -SkipCopy
@@ -101,4 +101,4 @@ reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v XimeServer /t RE
 
 Write-Host ""
 Write-Host "Install complete." -ForegroundColor Green
-Write-Host "Switch input method with Win+Space in any app (e.g. Notepad), select 曦码·曜输入法, type pinyin."
+Write-Host "Switch input method with Win+Space in any app (e.g. Notepad), select 凑合输入法, type pinyin."

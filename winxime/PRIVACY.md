@@ -1,12 +1,12 @@
-# 隐私政策 / Privacy Policy
+﻿# 隐私政策 / Privacy Policy
 
 生效日期 / Effective Date: 2026年8月15日 / August 15, 2026
 
 ## 中文版
 
-### 曦码·曜输入法 隐私政策
+### 凑合输入法 隐私政策
 
-感谢您使用曦码·曜输入法（以下简称"本应用"）。我们非常重视您的隐私。本政策说明了本应用如何处理您的信息。
+感谢您使用凑合输入法（以下简称"本应用"）。我们非常重视您的隐私。本政策说明了本应用如何处理您的信息。
 
 #### 1. 数据收集
 
@@ -44,9 +44,9 @@
 
 ## English Version
 
-### Xime Yao Input Method — Privacy Policy
+### Couhe Input Method — Privacy Policy
 
-Thank you for using Xime Yao Input Method ("the App"). We value your privacy. This policy explains how the App handles your information.
+Thank you for using Couhe Input Method ("the App"). We value your privacy. This policy explains how the App handles your information.
 
 #### 1. Data Collection
 

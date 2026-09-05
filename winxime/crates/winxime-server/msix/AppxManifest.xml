@@ -11,9 +11,9 @@
   <Identity Name="Kor1.1134722507774" Publisher="CN=96C59AFA-A314-400B-B8F0-1237E0D56928" Version="{{VERSION}}" />
 
   <Properties>
-    <DisplayName>曦码·曜输入法</DisplayName>
+    <DisplayName>凑合输入法</DisplayName>
     <PublisherDisplayName>Kor1</PublisherDisplayName>
-    <Description>曦码·曜五笔输入法，基于 rime 引擎</Description>
+    <Description>凑合五笔输入法，基于 rime 引擎</Description>
     <Logo>assets\StoreLogo.png</Logo>
   </Properties>
 
@@ -29,10 +29,10 @@
   <Applications>
     <Application Id="XimeServer" Executable="winxime-server.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
-        DisplayName="曦码·曜输入法"
+        DisplayName="凑合输入法"
         Square150x150Logo="assets\Square150x150Logo.png"
         Square44x44Logo="assets\Square44x44Logo.png"
-        Description="曦码·曜五笔输入法，基于 rime 引擎"
+        Description="凑合五笔输入法，基于 rime 引擎"
         BackgroundColor="transparent" />
       <Extensions>
         <desktop:Extension Category="windows.startupTask">

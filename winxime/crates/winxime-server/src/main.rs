@@ -21,11 +21,11 @@ use xime_rime::RimeEngine;
 
 fn main() {
     let _ = set_app_metadata(AppMetadata {
-        display_name: "曦码·曜",
+        display_name: "凑合",
         config_dir_name: "xime",
         config_file_base: "xime",
-        distribution_name: "Xime Yao",
-        distribution_code_name: "Xime Yao",
+        distribution_name: "Couhe",
+        distribution_code_name: "Couhe",
         app_name: "rime.xime.server",
         version: env!("CARGO_PKG_VERSION"),
     });
@@ -82,7 +82,7 @@ fn main() {
     register::ensure_registered();
 
     let config = XimeConfig::load();
-    let engine = match RimeEngine::new(&shared_data_dir, &user_data_dir, "Xime Yao") {
+    let engine = match RimeEngine::new(&shared_data_dir, &user_data_dir, "Couhe") {
         Ok(mut e) => {
             e.set_option("_horizontal", config.style.horizontal);
             info!(
