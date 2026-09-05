@@ -288,8 +288,16 @@ fn run_server(engine: Arc<std::sync::Mutex<RimeEngine>>) {
                     .parent()
                     .unwrap_or_else(|| std::path::Path::new("C:\\Program Files\\winxime-server"));
                 let setup_path = exe_dir.join("winxime-setup.exe");
+                info!(
+                    "OpenSettings: setup_path={}, exists={}",
+                    setup_path.display(),
+                    setup_path.exists()
+                );
                 if setup_path.exists() {
-                    std::process::Command::new(&setup_path).spawn().ok();
+                    match std::process::Command::new(&setup_path).spawn() {
+                        Ok(child) => info!("OpenSettings: spawned setup pid={}", child.id()),
+                        Err(e) => tracing::error!("OpenSettings: spawn failed: {e}"),
+                    }
                 }
             }
             tray::TrayAction::About => {
@@ -302,9 +310,18 @@ fn run_server(engine: Arc<std::sync::Mutex<RimeEngine>>) {
                     .parent()
                     .unwrap_or_else(|| std::path::Path::new("C:\\Program Files\\winxime-server"));
                 let setup_path = exe_dir.join("winxime-setup.exe");
-                let _ = std::process::Command::new(&setup_path)
+                info!(
+                    "About: setup_path={}, exists={}",
+                    setup_path.display(),
+                    setup_path.exists()
+                );
+                match std::process::Command::new(&setup_path)
                     .arg("--about")
-                    .spawn();
+                    .spawn()
+                {
+                    Ok(child) => info!("About: spawned setup pid={}", child.id()),
+                    Err(e) => tracing::error!("About: spawn failed: {e}"),
+                }
             }
             tray::TrayAction::Feedback => {
                 let _ = std::process::Command::new("cmd")

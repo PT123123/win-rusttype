@@ -47,7 +47,7 @@ if ($Uninstall) {
 if (-not $SkipCopy) {
     Write-Host "[1/4] Copying files to $InstallDir ..." -ForegroundColor Cyan
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-    $files = @("winxime-server.exe", "winxime_tsf.dll", "rime.dll", "winxime-tsf-register.exe", "icon.ico")
+    $files = @("winxime-server.exe", "winxime-setup.exe", "winxime_tsf.dll", "rime.dll", "winxime-tsf-register.exe", "icon.ico")
     foreach ($f in $files) {
         $s = Join-Path $BuildDir $f
         if (Test-Path $s) { Copy-Item $s $InstallDir -Force; Write-Host "  copied $f" }

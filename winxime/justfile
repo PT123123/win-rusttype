@@ -1,0 +1,53 @@
+# winxime — 凑合五笔输入法 构建/安装任务入口
+# 用法: just <recipe>
+# 示例: just install   (编译 + 复制 rime.dll + 完整安装 + UAC 注册 + 启动服务)
+
+set shell := ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+
+# 列出所有可用任务
+default:
+	just --list
+
+# 编译（debug）
+build:
+	cargo build
+
+# 编译（release）
+build-release:
+	cargo build --release
+
+# 快速一致性检查（AGENTS.md 硬性要求）
+check:
+	cargo build --quiet
+
+# 复制 librime 运行库到构建目录
+copy-rime:
+	Copy-Item "..\libximecore\librime\dist\lib\rime.dll" "target\debug\rime.dll" -Force
+
+# 完整安装：编译 → 复制 rime.dll → 安装到 %LOCALAPPDATA%\Xime → UAC 注册 TSF → 启动服务 → 开机自启
+install: build copy-rime
+	.\install.ps1
+
+# 开发模式热重载：停服务 → 反注册 → 编译 → 复制 rime.dll → 数据目录 → 注册 → 启动
+rebuild:
+	.\rebuild.ps1
+
+# 卸载（保留用户数据）
+uninstall:
+	.\install.ps1 -Uninstall
+
+# 完全卸载（删除文件 + 注册表 + 用户数据）
+full-uninstall:
+	.\full-uninstall.ps1
+
+# 打包 MSI 安装包
+msi:
+	.\msi-build.ps1
+
+# 运行测试
+test:
+	cargo test
+
+# 清理构建产物
+clean:
+	cargo clean

@@ -6,6 +6,7 @@
 |------|------|
 | [01-gaps.md](01-gaps.md) | 差距分析：MVP 已交付 vs 可用输入法还缺什么（功能/工程/技术债/量化对比） |
 | [02-optimization.md](02-optimization.md) | 优化路线图：P0 性能 → P1 界面精致度 → P2 功能 → P3 工程化，含验收标准与竞品对标方法学 |
+| [03-settings-menu-fix.md](03-settings-menu-fix.md) | 排查记录：托盘「设置/关于」无反应（安装清单漏文件 + UAC Installer Detection 致 os error 740），含修复与通用经验 |
 
 ## 关键事实速查
 

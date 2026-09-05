@@ -42,8 +42,8 @@ use windows::Win32::{
     System::LibraryLoader::GetModuleHandleW,
     UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI},
     UI::WindowsAndMessaging::{
-        DefWindowProcW, GetWindowLongPtrW, LoadCursorW, PostMessageW, RegisterClassW,
-        SetWindowLongPtrW, SetWindowPos, ShowWindow, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW,
+        DefWindowProcW, GetWindowLongPtrW, GetWindowRect, LoadCursorW, PostMessageW,
+        RegisterClassW, SetWindowLongPtrW, SetWindowPos, ShowWindow, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW,
         CW_USEDEFAULT, GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, SWP_NOACTIVATE, SWP_NOCOPYBITS,
         SWP_NOMOVE, SWP_NOSIZE, SW_HIDE, SW_SHOWNA, WINDOWPOS, WM_DESTROY, WM_NCCREATE, WM_PAINT,
         WM_USER, WM_WINDOWPOSCHANGING, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP,
@@ -427,31 +427,63 @@ impl RenderedView {
                     if !this_ptr.is_null() {
                         (*this_ptr).model.replace(model.clone());
 
-                        let view = (*this_ptr).view.borrow();
-                        if let Some(view) = view.as_ref() {
-                            let dpi = RenderedView::get_dpi_for_window(hwnd);
-                            info!("  DPI: {}", dpi);
-                            if let Ok(metrics) = view.calculate_client_rect(&model, dpi) {
-                                info!(
-                                    "  metrics.width: {}, metrics.height: {}",
-                                    metrics.width, metrics.height
+                        let (hw_width, hw_height, paint_needed) = {
+                            let view_ref = (*this_ptr).view.borrow();
+                            if let Some(view) = view_ref.as_ref() {
+                                let dpi = RenderedView::get_dpi_for_window(hwnd);
+                                info!("  DPI: {}", dpi);
+                                if let Ok(metrics) = view.calculate_client_rect(&model, dpi) {
+                                    info!("  metrics.width: {}, metrics.height: {}", metrics.width, metrics.height);
+                                    info!("  metrics.hw_width: {}, metrics.hw_height: {}", metrics.hw_width, metrics.hw_height);
+                                    info!("  metrics.item_widths: {:?}", metrics.item_widths);
+                                    (metrics.hw_width, metrics.hw_height, !model.items.is_empty())
+                                } else {
+                                    (0.0, 0.0, false)
+                                }
+                            } else {
+                                (0.0, 0.0, false)
+                            }
+                        };
+
+                        if hw_width > 0.0 && hw_height > 0.0 {
+                            let _ = SetWindowPos(
+                                hwnd,
+                                Some(HWND_TOPMOST),
+                                0,
+                                0,
+                                hw_width as i32,
+                                hw_height as i32,
+                                SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOCOPYBITS,
+                            );
+
+                            let mut rc = RECT::default();
+                            if GetWindowRect(hwnd, &mut rc).is_ok() {
+                                let (cx, cy) = RenderedView::clamp_point_to_monitor(
+                                    rc.left,
+                                    rc.top,
+                                    hw_width as i32,
+                                    hw_height as i32,
                                 );
-                                info!(
-                                    "  metrics.hw_width: {}, metrics.hw_height: {}",
-                                    metrics.hw_width, metrics.hw_height
-                                );
-                                info!("  metrics.item_widths: {:?}", metrics.item_widths);
-                                let _ = SetWindowPos(
-                                    hwnd,
-                                    Some(HWND_TOPMOST),
-                                    0,
-                                    0,
-                                    metrics.hw_width as i32,
-                                    metrics.hw_height as i32,
-                                    SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOCOPYBITS,
-                                );
-                                if !model.items.is_empty() {
-                                    let _ = view.on_paint_with_metrics(&model, dpi, &metrics);
+                                if cx != rc.left || cy != rc.top {
+                                    let _ = SetWindowPos(
+                                        hwnd,
+                                        Some(HWND_TOPMOST),
+                                        cx,
+                                        cy,
+                                        0,
+                                        0,
+                                        SWP_NOSIZE | SWP_NOACTIVATE,
+                                    );
+                                }
+                            }
+
+                            if paint_needed {
+                                let view_ref = (*this_ptr).view.borrow();
+                                if let Some(view) = view_ref.as_ref() {
+                                    let dpi = RenderedView::get_dpi_for_window(hwnd);
+                                    if let Ok(metrics) = view.calculate_client_rect(&model, dpi) {
+                                        let _ = view.on_paint_with_metrics(&model, dpi, &metrics);
+                                    }
                                 }
                             }
                         }
@@ -463,11 +495,28 @@ impl RenderedView {
             WM_SET_POSITION => {
                 let x = wparam.0 as i32;
                 let y = lparam.0 as i32;
+                let this_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const CandidateWindow;
+                let (cx, cy) = if !this_ptr.is_null() {
+                    let model = (*this_ptr).model.borrow();
+                    let view_ref = (*this_ptr).view.borrow();
+                    if let Some(view) = view_ref.as_ref() {
+                        let dpi = RenderedView::get_dpi_for_window(hwnd);
+                        if let Ok(metrics) = view.calculate_client_rect(&model, dpi) {
+                            RenderedView::position_relative_to_cursor(x, y, metrics.hw_width as i32, metrics.hw_height as i32)
+                        } else {
+                            (x, y + 24)
+                        }
+                    } else {
+                        (x, y + 24)
+                    }
+                } else {
+                    (x, y + 24)
+                };
                 let _ = SetWindowPos(
                     hwnd,
                     Some(HWND_TOPMOST),
-                    x,
-                    y + 24,
+                    cx,
+                    cy,
                     0,
                     0,
                     SWP_NOSIZE | SWP_NOACTIVATE,
@@ -517,15 +566,35 @@ impl RenderedView {
                     if let Some(view) = view.as_ref() {
                         let dpi = RenderedView::get_dpi_for_window(hwnd);
                         if let Ok(metrics) = view.calculate_client_rect(&model, dpi) {
-                            let _ = SetWindowPos(
-                                hwnd,
-                                Some(HWND_TOPMOST),
-                                0,
-                                0,
-                                metrics.hw_width as i32,
-                                metrics.hw_height as i32,
-                                SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOCOPYBITS,
-                            );
+                                let _ = SetWindowPos(
+                                    hwnd,
+                                    Some(HWND_TOPMOST),
+                                    0,
+                                    0,
+                                    metrics.hw_width as i32,
+                                    metrics.hw_height as i32,
+                                    SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOCOPYBITS,
+                                );
+                                let mut rc = RECT::default();
+                                if GetWindowRect(hwnd, &mut rc).is_ok() {
+                                    let (cx, cy) = RenderedView::clamp_point_to_monitor(
+                                        rc.left,
+                                        rc.top,
+                                        metrics.hw_width as i32,
+                                        metrics.hw_height as i32,
+                                    );
+                                    if cx != rc.left || cy != rc.top {
+                                        let _ = SetWindowPos(
+                                            hwnd,
+                                            Some(HWND_TOPMOST),
+                                            cx,
+                                            cy,
+                                            0,
+                                            0,
+                                            SWP_NOSIZE | SWP_NOACTIVATE,
+                                        );
+                                    }
+                                }
                             if !model.items.is_empty() {
                                 let _ = view.on_paint_with_metrics(&model, dpi, &metrics);
                             }
@@ -617,6 +686,33 @@ impl RenderedView {
                 )
             } else {
                 (x, y)
+            }
+        }
+    }
+
+    fn position_relative_to_cursor(cx: i32, cy: i32, w: i32, h: i32) -> (i32, i32) {
+        unsafe {
+            let monitor = MonitorFromPoint(POINT { x: cx, y: cy }, MONITOR_DEFAULTTONEAREST);
+            let mut mi = MONITORINFO {
+                cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+                ..Default::default()
+            };
+
+            if GetMonitorInfoW(monitor, &mut mi).as_bool() {
+                let rc = mi.rcWork;
+                let gap = 24;
+                let space_below = rc.bottom - cy - gap;
+                let final_y = if space_below >= h {
+                    cy + gap
+                } else {
+                    cy - h - gap
+                };
+                (
+                    cx.clamp(rc.left, rc.right - w),
+                    final_y.clamp(rc.top, rc.bottom - h),
+                )
+            } else {
+                (cx, cy + 24)
             }
         }
     }
@@ -1485,29 +1581,41 @@ impl CandidateWindow {
 
     pub fn show(&self, x: i32, y: i32) {
         self.ensure_view_initialized();
-        if let Some(view) = self.view.borrow().as_ref() {
-            info!(
-                "  show: hwnd={:?}, moving to ({}, {})",
-                view.hwnd.0,
-                x,
-                y + 24
+
+        let (hwnd, cx, cy) = {
+            let view_ref = self.view.borrow();
+            let view = match view_ref.as_ref() {
+                Some(v) => v,
+                None => {
+                    info!("  show: view is None!");
+                    return;
+                }
+            };
+            let hwnd = view.hwnd;
+            let model = self.model.borrow();
+            let dpi = RenderedView::get_dpi_for_point(POINT { x, y });
+            let (cx, cy) = if let Ok(metrics) = view.calculate_client_rect(&model, dpi) {
+                RenderedView::position_relative_to_cursor(x, y, metrics.hw_width as i32, metrics.hw_height as i32)
+            } else {
+                (x, y + 24)
+            };
+            (hwnd, cx, cy)
+        };
+
+        info!("  show: hwnd={:?}, moving to ({}, {})", hwnd.0, cx, cy);
+        unsafe {
+            let _ = SetWindowPos(
+                hwnd,
+                Some(HWND_TOPMOST),
+                cx,
+                cy,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOACTIVATE,
             );
-            unsafe {
-                let _ = SetWindowPos(
-                    view.hwnd,
-                    Some(HWND_TOPMOST),
-                    x,
-                    y + 24,
-                    0,
-                    0,
-                    SWP_NOSIZE | SWP_NOACTIVATE,
-                );
-                info!("  show: posting WM_SHOW_CANDIDATE");
-                let result = PostMessageW(Some(view.hwnd), WM_SHOW_CANDIDATE, WPARAM(0), LPARAM(0));
-                info!("  show: PostMessageW result: {:?}", result);
-            }
-        } else {
-            info!("  show: view is None!");
+            info!("  show: posting WM_SHOW_CANDIDATE");
+            let result = PostMessageW(Some(hwnd), WM_SHOW_CANDIDATE, WPARAM(0), LPARAM(0));
+            info!("  show: PostMessageW result: {:?}", result);
         }
     }
 
