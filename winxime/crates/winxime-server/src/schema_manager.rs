@@ -2,6 +2,22 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+/// 连接超时：对端不可达时快速失败，避免请求无限挂起。
+const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+/// 整体超时：索引文件小，15s 足够；这些请求在引擎锁内执行，必须有上界。
+const HTTP_INDEX_TIMEOUT: Duration = Duration::from_secs(15);
+/// 整体超时：方案包可能有数 MB，慢速链路给宽一些，但仍要有上界。
+const HTTP_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60);
+
+fn http_agent(global_timeout: Duration) -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_connect(Some(HTTP_CONNECT_TIMEOUT))
+        .timeout_global(Some(global_timeout))
+        .build()
+        .new_agent()
+}
 
 pub struct SchemaManager {
     market_dir: PathBuf,
@@ -74,7 +90,8 @@ impl SchemaManager {
     }
 
     fn fetch_url(&self, url: &str) -> Result<String, String> {
-        let response = ureq::get(url)
+        let response = http_agent(HTTP_INDEX_TIMEOUT)
+            .get(url)
             .call()
             .map_err(|e| format!("网络请求失败: {}", e))?;
         response
@@ -94,10 +111,10 @@ impl SchemaManager {
         std::fs::create_dir_all(&pkg_dir)
             .map_err(|e| format!("创建目录失败: {}", e))?;
 
-        let response =
-            ureq::get(url)
-                .call()
-                .map_err(|e| format!("下载失败: {}", e))?;
+        let response = http_agent(HTTP_DOWNLOAD_TIMEOUT)
+            .get(url)
+            .call()
+            .map_err(|e| format!("下载失败: {}", e))?;
 
         let bytes = response
             .into_body()

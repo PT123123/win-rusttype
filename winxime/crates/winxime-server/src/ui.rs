@@ -43,7 +43,8 @@ use windows::Win32::{
     UI::WindowsAndMessaging::{
         DefWindowProcW, GetWindowLongPtrW, LoadCursorW, PostMessageW,
         RegisterClassW, SetWindowLongPtrW, SetWindowPos, ShowWindow, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW,
-        CW_USEDEFAULT, GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, SWP_NOACTIVATE, SWP_NOCOPYBITS,
+        CW_USEDEFAULT, GWLP_USERDATA, HWND_TOPMOST, IDC_ARROW, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE,
+        SWP_NOCOPYBITS,
         SW_HIDE, SW_SHOWNA, WM_DESTROY, WM_DPICHANGED, WM_NCCREATE, WM_PAINT,
         WM_USER, WM_WINDOWPOSCHANGING, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP,
         WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
@@ -633,14 +634,32 @@ impl RenderedView {
             (view.hwnd, metrics, x, y)
         };
 
-        let _ = SetWindowPos(
+        // SWP_ASYNCWINDOWPOS: IPC 线程持引擎锁调用本函数时，定位改为投递给属主线程（主线程）
+        // 异步执行，避免同步等待主线程导致持锁线程被卡死；主线程自身调用时该标志是 no-op。
+        let swp_begin = std::time::Instant::now();
+        debug!(
+            "apply_layout: SetWindowPos begin hwnd={:?} at=({},{}) size={}x{} dpi={} thread={:?}",
+            hwnd.0,
+            x,
+            y,
+            metrics.hw_width as i32,
+            metrics.hw_height as i32,
+            dpi,
+            std::thread::current().id()
+        );
+        let swp_result = SetWindowPos(
             hwnd,
             Some(HWND_TOPMOST),
             x,
             y,
             metrics.hw_width as i32,
             metrics.hw_height as i32,
-            SWP_NOACTIVATE | SWP_NOCOPYBITS,
+            SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_ASYNCWINDOWPOS,
+        );
+        debug!(
+            "apply_layout: SetWindowPos done in {:?} result={:?}",
+            swp_begin.elapsed(),
+            swp_result.ok()
         );
         info!(
             "apply_layout: dpi={}, hw={}x{}, at=({},{})",

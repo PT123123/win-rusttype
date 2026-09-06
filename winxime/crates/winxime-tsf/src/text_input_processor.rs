@@ -764,6 +764,16 @@ impl XimeTextService_Impl {
         self.composing.set(val);
     }
 
+    /// 降级状态：服务端不可达或持续返回"忙"响应时置位。
+    /// 降级期间 OnTestKeyDown 不声称接管，按键直接透传给应用（英文/字母可上屏）；
+    /// 服务端恢复（按键探测或焦点切换时握手成功）后自动清除。
+    fn set_degraded(&self, val: bool) {
+        if self.degraded.get() != val {
+            debug!("degraded state -> {}", val);
+        }
+        self.degraded.set(val);
+    }
+
     fn should_handle_key(&self, vk: VIRTUAL_KEY) -> bool {
         let code = vk.0;
 
@@ -949,6 +959,7 @@ impl XimeTextService_Impl {
                 debug!("  -> Reconnected!");
             } else {
                 debug!("  -> Reconnect failed");
+                self.set_degraded(true);
                 return false;
             }
         }
@@ -973,6 +984,12 @@ impl XimeTextService_Impl {
         debug!("  -> response: {:?}", response);
         if let Some(response) = response {
             debug!("  -> success={}", response.success);
+            // 区分"服务端忙/卡死"与"Rime 未处理该键"：引擎锁被占用时服务端返回
+            // 全空响应（success=false 且无 status/context），正常未处理按键的响应
+            // 总是携带 status，不能据此降级。
+            let server_busy =
+                !response.success && response.status.is_none() && response.context.is_none();
+            self.set_degraded(server_busy);
             if response.success {
                 let output = RimeOutput::from_response(&response);
                 self.set_composing(output.composing);
@@ -987,6 +1004,9 @@ impl XimeTextService_Impl {
                 }
                 return true;
             }
+        } else {
+            // IPC 通信失败（管道断开/读超时），服务端不可达
+            self.set_degraded(true);
         }
         debug!("  -> returning false");
         false
@@ -1048,8 +1068,14 @@ impl ITfKeyEventSink_Impl for XimeTextService_Impl {
     ) -> Result<BOOL> {
         let vk = VIRTUAL_KEY(wparam.0 as u16);
         debug!("OnTestKeyDown: vk={}", vk.0);
-        let handled = self.should_handle_key(vk);
-        debug!("  -> should_handle_key: {}", handled);
+        // 降级期间不声称接管，按键直接透传给应用（英文/字母可上屏）。
+        // OnKeyDown 仍按原始规则探测服务端，服务端恢复后自动重新接管。
+        let handled = !self.degraded.get() && self.should_handle_key(vk);
+        debug!(
+            "  -> should_handle_key: {} (degraded={})",
+            handled,
+            self.degraded.get()
+        );
         Ok(BOOL(if handled { 1 } else { 0 }))
     }
 
@@ -1209,6 +1235,7 @@ pub struct XimeTextService {
     client_id: std::cell::Cell<u32>,
     ipc: IpcClientHandle,
     composing: std::cell::Cell<bool>,
+    degraded: std::cell::Cell<bool>,
     composition: Arc<std::sync::Mutex<Option<ITfComposition>>>,
     lang_bar_mgr: std::cell::RefCell<Option<ITfLangBarItemMgr>>,
     ascii_mode: crate::language_bar::SharedAsciiMode,
@@ -1239,6 +1266,7 @@ impl XimeTextService {
             client_id: std::cell::Cell::new(0),
             ipc,
             composing: std::cell::Cell::new(false),
+            degraded: std::cell::Cell::new(false),
             composition: Arc::new(std::sync::Mutex::new(None)),
             lang_bar_mgr: std::cell::RefCell::new(None),
             ascii_mode: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -1468,6 +1496,7 @@ impl XimeTextService_Impl {
         *self.thread_mgr.borrow_mut() = None;
         self.client_id.set(0);
         self.composing.set(false);
+        self.degraded.set(false);
         match self.composition.try_lock() {
             Ok(mut guard) => *guard = None,
             Err(std::sync::TryLockError::Poisoned(e)) => *e.into_inner() = None,
@@ -1533,6 +1562,8 @@ impl ITfActiveLanguageProfileNotifySink_Impl for XimeTextService_Impl {
                     debug!("  -> ascii_mode from server: {}", status.ascii_mode);
                     self.ascii_mode
                         .store(status.ascii_mode, std::sync::atomic::Ordering::Release);
+                    // 握手成功说明服务端已恢复，解除降级
+                    self.set_degraded(false);
 
                     let sink = match self.lang_bar_sink_ref.try_lock() {
                         Ok(g) => g,
@@ -1628,6 +1659,8 @@ impl ITfThreadMgrEventSink_Impl for XimeTextService_Impl {
                 debug!("  -> ascii_mode from server: {}", status.ascii_mode);
                 self.ascii_mode
                     .store(status.ascii_mode, std::sync::atomic::Ordering::Release);
+                // 握手成功说明服务端已恢复，解除降级
+                self.set_degraded(false);
 
                 let sink = match self.lang_bar_sink_ref.try_lock() {
                     Ok(g) => g,
